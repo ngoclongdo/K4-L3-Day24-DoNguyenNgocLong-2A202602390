@@ -3,6 +3,13 @@ title = "Day 24 synthetic secret exercise"
 [extend]
 useDefault = true
 
+[allowlist]
+description = "Allowlist virtual environment libraries to prevent false positives"
+paths = [
+    '''^\.venv/''',
+    '''^\.venv\\''',
+]
+
 [[rules]]
 id = "lab24-synthetic-token"
 description = "A deliberately invalid lab token; never use real credentials"
