@@ -30,10 +30,57 @@ set ở tests/vn_pii_testset.jsonl):
 """
 from __future__ import annotations
 
+import re
+
+EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
+BANK_RE = re.compile(
+    r"(?:STK|số tài khoản|so tai khoan|tài khoản|tai khoan|TK)\s*[:.]?\s*(\d{8,16})\b",
+    re.IGNORECASE,
+)
+CCCD_RE = re.compile(r"\b\d{12}\b")
+PHONE_RE = re.compile(r"\b0\d{9}\b")
+
 
 def detect(text: str) -> list[dict]:
-    raise NotImplementedError("BƯỚC 3a: implement PII detection")
+    """Phát hiện các thực thể PII trong văn bản: VN_CCCD, VN_PHONE, VN_BANK_ACCOUNT, EMAIL."""
+    entities: list[dict] = []
+    used_spans: list[tuple[int, int]] = []
+
+    # 1. EMAIL
+    for m in EMAIL_RE.finditer(text):
+        entities.append({"type": "EMAIL", "start": m.start(), "end": m.end()})
+        used_spans.append((m.start(), m.end()))
+
+    # 2. VN_BANK_ACCOUNT (thường có tiền tố STK/tài khoản)
+    for m in BANK_RE.finditer(text):
+        start, end = m.start(1), m.end(1)
+        entities.append({"type": "VN_BANK_ACCOUNT", "start": start, "end": end})
+        used_spans.append((start, end))
+
+    # 3. VN_CCCD (12 chữ số không trùng với tài khoản ngân hàng)
+    for m in CCCD_RE.finditer(text):
+        s, e = m.start(), m.end()
+        if not any(us <= s and e <= ue for us, ue in used_spans):
+            entities.append({"type": "VN_CCCD", "start": s, "end": e})
+            used_spans.append((s, e))
+
+    # 4. VN_PHONE (10 chữ số bắt đầu bằng 0, không trùng với các vùng đã gán)
+    for m in PHONE_RE.finditer(text):
+        s, e = m.start(), m.end()
+        if not any(us <= s and e <= ue for us, ue in used_spans):
+            entities.append({"type": "VN_PHONE", "start": s, "end": e})
+            used_spans.append((s, e))
+
+    return sorted(entities, key=lambda x: (x["start"], x["end"]))
 
 
 def redact(text: str) -> str:
-    raise NotImplementedError("BƯỚC 3a: implement PII redaction")
+    """Thay thế các thực thể PII bằng [REDACTED_<TYPE>], thay từ cuối về đầu."""
+    entities = detect(text)
+    # Sắp xếp giảm dần theo vị trí start để thay thế từ cuối chuỗi về đầu mà không làm lệch index
+    entities_sorted = sorted(entities, key=lambda e: (e["start"], e["end"]), reverse=True)
+    result = text
+    for e in entities_sorted:
+        tag = f"[REDACTED_{e['type']}]"
+        result = result[: e["start"]] + tag + result[e["end"] :]
+    return result
